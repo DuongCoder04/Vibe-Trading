@@ -617,7 +617,8 @@ Satu call `get_market_data`, **28 sumber data market**, salah satunya marketplac
 
 | Sumber | Market | Auth | Peran |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | tidak ada | tidak terkena IP-ban (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | tidak ada | tidak terkena IP-ban |
+| `mootdx` | A-share (explicit-only) | tidak ada | retired from the default chain 2026-10: TDX servers stopped answering the client protocol it speaks (#1729) |
 | `eastmoney` | A / AS / HK | tidak ada | OHLCV + fundamental mendalam & tool flow (throttled) |
 | `baostock` · `akshare` | A (+ AS/HK/futures/makro/fx) | tidak ada | fallback gratis |
 | `tushare` | A / HK / futures / fund / makro | token | A-share paling kaya |
@@ -639,7 +640,7 @@ Satu call `get_market_data`, **28 sumber data market**, salah satunya marketplac
 
 **Fallback chain (berdasarkan risiko IP-ban):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -1020,7 +1021,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **Provider LLM yang didukung:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, OpenCode (Go / Zen), Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (lokal). Jika `*_BASE_URL` tidak diatur, setiap provider fallback ke endpoint canonical-nya, jadi cukup key saja. Lihat `.env.example` untuk config.
 
-> **Tip:** Semua market dapat bekerja tanpa API key berkat fallback otomatis. yfinance/Yahoo (HK/AS/Kanada/UK), OKX (crypto), mootdx (A-share, TCP langsung, tanpa throttle IP), dan AKShare (A-share, AS, HK, futures, forex) semuanya gratis. Quote LSE `.L` harus mendeklarasikan GBP atau GBp agar pence dapat dinormalisasi sebelum accounting GBP. Token Tushare opsional — mootdx adalah fallback A-share tanpa token yang disarankan, dengan AKShare sebagai backup yang lebih luas.
+> **Tip:** Semua market dapat bekerja tanpa API key berkat fallback otomatis. yfinance/Yahoo (HK/AS/Kanada/UK), OKX (crypto), dan AKShare (A-share, AS, HK, futures, forex) semuanya gratis. Quote LSE `.L` harus mendeklarasikan GBP atau GBp agar pence dapat dinormalisasi sebelum accounting GBP. Token Tushare opsional; fallback A-share tanpa token adalah tencent, baostock, dan AKShare.
 
 <a id="github-copilot-sdk-provider"></a>
 ### Provider GitHub Copilot SDK

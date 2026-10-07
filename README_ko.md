@@ -456,7 +456,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A-share (explicit-only) | none | retired from the default chain 2026-10: TDX servers stopped answering the client protocol it speaks (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -478,7 +479,7 @@ vibe-trading connector install /tmp/my-broker
 
 **폴백 체인 (IP 차단 위험 순):**
 
-- **A주** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A주** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **미국** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **홍콩** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **인도 (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -845,7 +846,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **지원 LLM provider:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
 
-> **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance/Yahoo(HK/US/캐나다/영국), OKX(crypto), mootdx(A주, TCP 직결, IP 제한 없음), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. LSE `.L` 호가는 GBP 또는 GBp로 명시되어야 하며, GBP 회계 전에 펜스를 정규화합니다. Tushare token은 선택 사항이며, mootdx가 권장 no-token A주 fallback이고 AKShare는 더 넓은 커버리지의 백업입니다.
+> **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance/Yahoo(HK/US/캐나다/영국), OKX(crypto), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. LSE `.L` 호가는 GBP 또는 GBp로 명시되어야 하며, GBP 회계 전에 펜스를 정규화합니다. Tushare token은 선택 사항이며, A주의 no-token fallback은 tencent·baostock·AKShare입니다.
 
 ### 경로 A: Docker (설정 불필요)
 

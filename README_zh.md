@@ -471,7 +471,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A-share (explicit-only) | none | retired from the default chain 2026-10: TDX servers stopped answering the client protocol it speaks (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -493,7 +494,7 @@ vibe-trading connector install /tmp/my-broker
 
 **Fallback 链（按被封 IP 风险排序）：**
 
-- **A股** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -852,7 +853,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **支持的 LLM providers：** OpenRouter、OpenAI、Anthropic（原生 Messages API）、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、SiliconFlow（CN + Global）、Xiaomi MIMO、Novita AI、iFlytek 星火、Z.ai、NVIDIA NIM、ModelScope、GitHub Copilot、Ollama（本地）。未设置 `*_BASE_URL` 时，每个 provider 会回退到其规范端点，因此只需一个 key 即可。配置见 `.env.example`。
 
-> **提示：** 由于自动 fallback，所有市场都可以在没有任何 API key 的情况下工作。yfinance/Yahoo（港股/美股/加拿大/英国）、OKX（加密）、mootdx（A 股，TCP 直连不封 IP）和 AKShare（A 股、美股、港股、期货、外汇）都是免费的。LSE `.L` 报价必须明示为 GBP 或 GBp，以便在英镑记账前将便士归一化。Tushare token 是可选项 —— mootdx 是首选的免 token A 股 fallback，AKShare 作为覆盖更广的兜底。
+> **提示：** 由于自动 fallback，所有市场都可以在没有任何 API key 的情况下工作。yfinance/Yahoo（港股/美股/加拿大/英国）、OKX（加密）和 AKShare（A 股、美股、港股、期货、外汇）都是免费的。LSE `.L` 报价必须明示为 GBP 或 GBp，以便在英镑记账前将便士归一化。Tushare token 是可选项，tencent、baostock 和 AKShare 是免 token 的 A 股 fallback。
 
 ### Path A: Docker（零配置）
 
