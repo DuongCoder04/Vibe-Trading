@@ -447,6 +447,25 @@ def test_load_cashflows_refuses_an_ambiguous_single_comma(tmp_path):
     assert load_cashflows(path, decimal_separator=",")[0].amount == pytest.approx(1.234)
 
 
+def test_load_cashflows_refuses_an_ambiguous_single_dot(tmp_path):
+    """'12.000' is 12 in a US export and 12000 in a European one."""
+    path = _write_csv(
+        tmp_path, "flows.csv", 'date,amount,kind,currency\n2024-03-31,"12.000",coupon,USD\n'
+    )
+    with pytest.raises(CashFlowIngestError, match="decimal_separator"):
+        load_cashflows(path)
+    assert load_cashflows(path, decimal_separator=".")[0].amount == pytest.approx(12.0)
+    assert load_cashflows(path, decimal_separator=",")[0].amount == pytest.approx(12000.0)
+
+
+def test_load_cashflows_accepts_an_unambiguous_single_dot(tmp_path):
+    """A dot not followed by exactly three digits can only be a decimal point."""
+    path = _write_csv(
+        tmp_path, "flows.csv", 'date,amount,kind,currency\n2024-03-31,"123.45",coupon,USD\n'
+    )
+    assert load_cashflows(path)[0].amount == pytest.approx(123.45)
+
+
 def test_load_cashflows_rejects_an_invalid_decimal_separator(tmp_path):
     path = _write_csv(
         tmp_path, "flows.csv", "date,amount,kind,currency\n2024-03-31,10,coupon,USD\n"
