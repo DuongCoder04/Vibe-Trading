@@ -120,6 +120,12 @@ def _normalize_symbol(code: str, market: str) -> str:
             return f"{cleaned[:-4]}-USDT"
         return cleaned
     if re.search(r"\.(US|HK|SH|SZ|BJ|KS|KQ|NS|BO|TO|V|BA|L|VN|FX)$", cleaned):
+        # HK codes are zero-padded to four digits on the bare path below; the
+        # suffixed spelling must land on the same key, or the duplicate-asset
+        # guard misses one instrument written as `700` and `700.HK`.
+        hk = re.fullmatch(r"(\d{1,5})\.HK", cleaned)
+        if market == "hk_equity" and hk:
+            return f"{hk.group(1).zfill(4)}.HK"
         return cleaned
     upper = cleaned.upper()
     if market == "us_equity":

@@ -98,6 +98,29 @@ def test_duplicate_aliases_rejected_before_any_fetch(monkeypatch):
     assert correlation._normalize_symbol("eur/usd", "forex") == "EURUSD=X"
 
 
+@pytest.mark.parametrize(
+    "pair", [("700", "700.HK"), ("9988", "9988.HK"), ("00700", "00700.HK")]
+)
+def test_hk_spellings_of_one_instrument_are_rejected_as_duplicates(pair, monkeypatch):
+    """A bare HK code and its suffixed spelling must normalize to one key.
+
+    The bare path zero-pads to four digits while the suffixed spelling passed
+    through unchanged, so the duplicate guard missed the same instrument written
+    both ways and the endpoint returned a self-correlation, presented as a
+    cross-asset relationship.
+    """
+    fetch = Mock()
+    monkeypatch.setattr(correlation, "_fetch_price_series", fetch)
+    left, right = pair
+    market = correlation.infer_market(left)
+    assert correlation._normalize_symbol(left, market) == correlation._normalize_symbol(
+        right, market
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        correlation.compute_correlation_analysis(list(pair))
+    fetch.assert_not_called()
+
+
 def test_readiness_snapshots_and_single_asset_validation():
     client = TestClient(api_server.app, client=("127.0.0.1", 50000))
     assert client.get("/alpha/readiness").json()["universes"]["btc-usdt"]["ready"] is False
