@@ -357,7 +357,13 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> str:
 
 
 async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[str, Any]:
-    """Validate → optional enable-transition probe → write → hot apply."""
+    """Validate → optional enable-transition probe → write → apply.
+
+    The response ``applied`` field reports how the edit reached the runtime:
+    ``refreshed`` (a noop-key edit applied in place, no reconnect),
+    ``hot_swapped`` (adapter stop+start), ``reset`` (full runtime rebuild), or
+    ``deferred`` (no runtime yet; the next start reads disk).
+    """
     stored = _stored_section(name)
     patch = _normalize_nullable_blanks(name, _patch_of(name, payload.config))
     clears = _clear_flags(payload.model_extra)
@@ -402,6 +408,20 @@ async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[
         ) from None
 
     fresh = _stored_section(name)
+    # Noop-key edits (declared keys + manager bool overrides) are read live per
+    # message, so refresh in place; ``enabled`` never qualifies (start/stop, #1625).
+    changed = set(patch) | set(clears)
+    noop_keys = cls.hot_reload_noop_keys | _MANAGER_OVERRIDE_KEYS
+    runtime = getattr(_host(), "_channel_runtime", None)
+    if (
+        changed
+        and changed <= noop_keys
+        and runtime is not None
+        and runtime.status().get("running")
+        and runtime.manager.get_channel(name) is not None
+        and await runtime.manager.refresh_channel_config(name, fresh)
+    ):
+        return {"channel": _fresh_entry(name), "applied": "refreshed"}
     applied = await _hot_apply(name, fresh or None)
     return {"channel": _fresh_entry(name), "applied": applied}
 

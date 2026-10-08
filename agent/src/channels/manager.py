@@ -299,6 +299,26 @@ class ChannelManager:
         async with self._reload_locks[name]:
             return await self._reload_channel_locked(name, section)
 
+    async def refresh_channel_config(self, name: str, section: dict) -> bool:
+        """Apply a noop-key config edit in place; False if not built or rejected."""
+        # Same lock as reload_channel: a refresh and a reload of one channel
+        # must not interleave (the reason _reload_locks exists).
+        async with self._reload_locks[name]:
+            channel = self.channels.get(name)
+            if channel is None or not channel.refresh_config(section):
+                return False
+            channel.send_progress = self._resolve_bool_override(
+                section, "send_progress", self._global_bool("send_progress", True),
+            )
+            channel.send_tool_hints = self._resolve_bool_override(
+                section, "send_tool_hints", self._global_bool("send_tool_hints", False),
+            )
+            channel.show_reasoning = self._resolve_bool_override(
+                section, "show_reasoning", self._global_bool("show_reasoning", True),
+            )
+            self._store_channel_section(name, section)
+            return True
+
     async def _reload_channel_locked(self, name: str, section: dict | None) -> dict[str, Any]:
         old = self.channels.get(name)
         if old is not None:
