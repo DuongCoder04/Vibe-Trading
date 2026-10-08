@@ -535,6 +535,74 @@ def test_put_feishu_merge_patch_writes_section(tmp_path: Path, monkeypatch) -> N
     assert FEISHU_STORED_SECRET not in response.text
 
 
+def test_echoed_form_patch_does_not_discard_url_userinfo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Saving an echoed form must not strip a stored URL's embedded credentials.
+
+    ``GET /channels/config`` returns non-secret URL values with the userinfo
+    removed, and the settings form writes every non-secret field back verbatim
+    (``buildPatch``). Writing that echo to disk would silently destroy the
+    credential the stored URL carried, so the merge keeps the stored value;
+    ``clear_<key>`` remains the way to remove the setting.
+    """
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    entry = client.get("/channels/config").json()["channels"]["discord"]
+    assert entry["values"]["proxy"] == "http://proxy.local:8080"
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+
+    response = client.put("/channels/config/discord", json={"config": patch})
+    assert response.status_code == 200, response.text
+
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == PROXY
+    assert "proxy-secret" not in response.text
+
+
+def test_changed_url_and_clear_flag_still_beat_the_echo_guard(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The echo guard must not block a real edit, nor removal of the setting."""
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    response = client.put(
+        "/channels/config/discord",
+        json={"config": {"proxy": "http://new-user:new-secret@proxy.local:9090"}},
+    )
+    assert response.status_code == 200, response.text
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == "http://new-user:new-secret@proxy.local:9090"
+
+    response = client.put(
+        "/channels/config/discord", json={"config": {}, "clear_proxy": True}
+    )
+    assert response.status_code == 200, response.text
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert "proxy" not in on_disk
+
+
 def test_put_feishu_enable_with_bad_credentials_is_blocked_before_write(
     tmp_path: Path, monkeypatch
 ) -> None:
