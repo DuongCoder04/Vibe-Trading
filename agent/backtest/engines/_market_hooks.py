@@ -19,7 +19,6 @@ import pandas as pd
 
 from backtest.models import Position
 
-
 # ── Symbol -> market classification (shared by runner.py + composite.py) ──
 
 # Known Chinese-futures product codes — used as a heuristic when a symbol
