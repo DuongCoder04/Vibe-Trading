@@ -346,7 +346,9 @@ def _mask(value: Any, *, reveal_suffix: bool = True) -> dict[str, Any]:
 # last '@'. Matching it textually rather than through urllib.parse keeps a
 # malformed or out-of-range port from defeating the strip: ``urlsplit(...).port``
 # raises on those, and the fail-open fallback returned the credential.
-_URL_USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/\s?#]*@)?(\S*)")
+# The authority is matched as text, so the userinfo group tolerates whitespace
+# inside it (``pass word@host``) instead of stopping at the first space.
+_URL_USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/?#]*@)?(\S*)")
 
 
 def _strip_url_userinfo(value: Any) -> Any:
