@@ -68,6 +68,9 @@ class ChannelManager:
         # would each stop the adapter they saw and start their own.
         self._reload_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
+        # Last outbound chat per channel: where a degraded config reset sends
+        # its user-visible notice (#1625). One entry per channel — bounded.
+        self._last_chat_ids: dict[str, str] = {}
         self._status: dict[str, dict[str, Any]] = {}
 
         self._init_channels()
@@ -467,6 +470,11 @@ class ChannelManager:
                                 msg.channel, msg.chat_id,
                             )
                             continue
+                    # Record the chat right before delivery: a chat we just
+                    # sent to is a chat a reset notice can reach (#1625). Only
+                    # this main path records — the reasoning-routing branch
+                    # above carries transient fragments, not conversations.
+                    self._last_chat_ids[msg.channel] = msg.chat_id
                     await self._send_with_retry(channel, msg)
                 else:
                     logger.warning("Unknown channel: %s", msg.channel)
@@ -585,6 +593,10 @@ class ChannelManager:
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""
         return self.channels.get(name)
+
+    def last_chat_id(self, name: str) -> str | None:
+        """Return the most recent outbound chat id for *name* (None if never sent)."""
+        return self._last_chat_ids.get(name)
 
     def get_status(self) -> dict[str, Any]:
         """Get status of all channels."""
