@@ -10,7 +10,6 @@ from collections import defaultdict
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from src.channels.base import BaseChannel
 from src.channels.bus.events import OutboundMessage
@@ -44,26 +43,21 @@ _MAX_REPLY_FINGERPRINTS = 4096
 # Runtime-error bookkeeping for the status surface (Refs #1625).
 _ERROR_CONTEXTS = frozenset({"start", "send", "reload_stop"})
 _ERROR_TEXT_LIMIT = 200
-_URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://\S+")
+# A URL's userinfo (``user:password@``) lives in its authority, before the
+# last '@'. Matching it textually rather than through urllib.parse keeps a
+# malformed or out-of-range port from defeating the redaction:
+# ``urlsplit(...).port`` raises on those, and the fail-open fallback returned
+# the credential the error text was being scrubbed of.
+# An error message is free text, so the userinfo group stops at whitespace:
+# unlike ``config_meta._URL_USERINFO_RE``, which matches a single config value
+# and tolerates a space inside the authority, this pattern must not swallow the
+# prose between a URL and a later '@' into one match.
+_URL_IN_TEXT_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/\s?#]*@)?(\S*)")
 
 
 def _strip_url_userinfo(text: str) -> str:
     """Return *text* with username/password stripped from every embedded URL."""
-
-    def _strip(match: re.Match[str]) -> str:
-        url = match.group(0)
-        try:
-            parts = urlsplit(url)
-            if parts.username is None and parts.password is None:
-                return url
-            host = parts.hostname or ""
-            if parts.port is not None:  # raises ValueError on a malformed port
-                host = f"{host}:{parts.port}"
-            return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-        except ValueError:
-            return url
-
-    return _URL_IN_TEXT_RE.sub(_strip, text)
+    return _URL_IN_TEXT_RE.sub(lambda match: match.group(1) + match.group(2), text)
 
 
 class ChannelManager:
