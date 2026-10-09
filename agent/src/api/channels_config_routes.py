@@ -33,6 +33,7 @@ from src.api import state as _state
 from src.channels import config as _channels_config
 from src.channels.bus.queue import MessageBus
 from src.channels.config_meta import (
+    _strip_url_userinfo,
     channel_field_hints,
     is_secret_key,
     split_values_secrets,
@@ -163,6 +164,34 @@ def _patch_of(name: str, body: dict[str, Any]) -> dict[str, Any]:
         for key, value in body.items()
         if not (_is_secret_key(name, key) and isinstance(value, str) and not value.strip())
     }
+
+
+def _drop_echoed_url_rewrites(
+    stored: dict[str, Any], patch: dict[str, Any]
+) -> dict[str, Any]:
+    """Return *patch* without values that only echo a stripped stored URL.
+
+    ``GET /channels/config`` hands out non-secret URL values with the userinfo
+    removed (``https://user:pw@host`` -> ``https://host``), and the settings form
+    writes every non-secret field back verbatim on save. Applying that echo
+    would replace the stored URL with the stripped form it was derived from,
+    destroying the embedded credential. An incoming value equal to the stripped
+    form of the stored one is treated as the echo of the value this API handed
+    out, so the stored value is kept. A deliberate retype of that stripped form
+    is therefore kept as well; ``clear_<key>`` remains the way to remove the
+    setting, and any *different* URL, including a new credential, is applied.
+    """
+    kept: dict[str, Any] = {}
+    for key, value in patch.items():
+        original = stored.get(key)
+        if (
+            isinstance(original, str)
+            and isinstance(value, str)
+            and value == _strip_url_userinfo(original)
+        ):
+            continue
+        kept[key] = value
+    return kept
 
 
 def _normalize_nullable_blanks(name: str, patch: dict[str, Any]) -> dict[str, Any]:
@@ -361,7 +390,9 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> str:
 async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[str, Any]:
     """Validate → optional enable-transition probe → write → hot apply."""
     stored = _stored_section(name)
-    patch = _normalize_nullable_blanks(name, _patch_of(name, payload.config))
+    patch = _drop_echoed_url_rewrites(
+        stored, _normalize_nullable_blanks(name, _patch_of(name, payload.config))
+    )
     clears = _clear_flags(payload.model_extra)
     merged = {**stored, **patch}
     for key in clears:
