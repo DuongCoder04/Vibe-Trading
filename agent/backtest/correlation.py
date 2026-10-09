@@ -96,8 +96,9 @@ def _normalize_symbol(code: str, market: str) -> str:
     The data loaders key US/HK/A-share instruments by an exchange-suffixed
     symbol (``AAPL.US``, ``0700.HK``, ``600000.SH``); a bare ticker such as
     ``AAPL`` or ``600000`` matches no loader and fetches nothing. Crypto pairs
-    (``BTC-USDT``) are already canonical, and any code that already carries a
-    ``.`` suffix is left untouched.
+    (``BTC-USDT``) are already canonical; a code that already carries a ``.``
+    suffix passes through, except HK codes, which are zero-padded to four digits
+    so one instrument keeps one key.
 
     Args:
         code: The raw code as typed by the user (e.g. ``AAPL``, ``600000``).
@@ -125,6 +126,11 @@ def _normalize_symbol(code: str, market: str) -> str:
         # guard misses one instrument written as `700` and `700.HK`.
         hk = re.fullmatch(r"(\d{1,5})\.HK", cleaned)
         if market == "hk_equity" and hk:
+            # zfill pads a 4-digit code and never truncates, so a 5-digit HKEX
+            # spelling (``00700.HK``) keeps its own key while ``700``, ``0700``
+            # and ``700.HK`` all land on ``0700.HK``. Collapsing the 5-digit
+            # form would change the symbol sent to the loaders, so that is a
+            # market-data decision rather than part of this normalization.
             return f"{hk.group(1).zfill(4)}.HK"
         return cleaned
     upper = cleaned.upper()
