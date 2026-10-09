@@ -48,6 +48,10 @@ _ERROR_TEXT_LIMIT = 200
 # malformed or out-of-range port from defeating the redaction:
 # ``urlsplit(...).port`` raises on those, and the fail-open fallback returned
 # the credential the error text was being scrubbed of.
+# An error message is free text, so the userinfo group stops at whitespace:
+# unlike ``config_meta._URL_USERINFO_RE``, which matches a single config value
+# and tolerates a space inside the authority, this pattern must not swallow the
+# prose between a URL and a later '@' into one match.
 _URL_IN_TEXT_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/\s?#]*@)?(\S*)")
 
 
