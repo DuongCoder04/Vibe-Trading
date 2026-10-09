@@ -459,7 +459,8 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 
 | Fuente | Mercados | Autenticación | Rol |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | ninguna | nunca bloqueada por IP (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | ninguna | nunca bloqueada por IP |
+| `mootdx` | A-share (explicit-only) | ninguna | retired from the default chain 2026-10: TDX servers stopped answering the client protocol it speaks (#1729) |
 | `eastmoney` | A / EE. UU. / HK | ninguna | OHLCV + herramientas de fundamentales y flujo profundas (limitada) |
 | `baostock` · `akshare` | A (+ EE. UU./HK/futuros/macro/fx) | ninguna | fallbacks gratuitos |
 | `tushare` | A / HK / futuros / fondos / macro | token | la más completa para A-share |
@@ -481,7 +482,7 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **EE. UU.** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -866,7 +867,7 @@ vibe-trading-mcp               # inicia el servidor MCP (stdio)
 
 > **Proveedores de LLM compatibles:** OpenRouter, OpenAI, Anthropic (API de Messages nativa), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (local). Cuando no se configura ningún `*_BASE_URL`, cada proveedor recurre a su endpoint canónico, así que basta con una clave. Consulta `.env.example` para la configuración.
 
-> **Consejo:** Todos los mercados funcionan sin ninguna clave de API gracias al fallback automático. yfinance/Yahoo (HK/US/Canadá/Reino Unido), OKX (cripto), mootdx (acciones A, conexión TCP directa, sin limitación de IP) y AKShare (acciones A, EE. UU., HK, futuros, forex) son gratuitos. Las cotizaciones LSE `.L` deben declarar GBP o GBp para normalizar los peniques antes de la contabilidad en GBP. El token de Tushare es opcional — mootdx es el fallback preferido sin token para acciones A, con AKShare como respaldo más amplio.
+> **Consejo:** Todos los mercados funcionan sin ninguna clave de API gracias al fallback automático. yfinance/Yahoo (HK/US/Canadá/Reino Unido), OKX (cripto) y AKShare (acciones A, EE. UU., HK, futuros, forex) son gratuitos. Las cotizaciones LSE `.L` deben declarar GBP o GBp para normalizar los peniques antes de la contabilidad en GBP. El token de Tushare es opcional; los fallback sin token para acciones A son tencent, baostock y AKShare.
 
 ### Ruta A: Docker (configuración cero)
 
