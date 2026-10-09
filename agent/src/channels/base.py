@@ -33,6 +33,12 @@ class BaseChannel(ABC):
 
     supports_connection_test: ClassVar[bool] = False
 
+    # Config keys a running adapter absorbs in place (no stop+start): those read
+    # live per message (``self.config.X``) rather than captured into the SDK
+    # client at ``start()``. Empty default keeps undeclared channels on the full
+    # reload path; ``enabled``/connection keys are never declared (#1625).
+    hot_reload_noop_keys: ClassVar[frozenset[str]] = frozenset()
+
     # Scheduled delivery is channel-agnostic at the scheduler layer. Adapters
     # describe the address they accept so generic UIs never need to hard-code
     # channel names or ask users to guess provider-specific target formats.
@@ -81,6 +87,25 @@ class BaseChannel(ABC):
             ``unsupported``.
         """
         return {"ok": False, "code": "unsupported"}
+
+    def refresh_config(self, section: dict[str, Any]) -> bool:
+        """Swap in *section* without reconnecting; False if validation fails.
+
+        Re-validates via the same path ``__init__`` used (the config model's
+        ``model_validate``, else a dict copy). Only ``hot_reload_noop_keys``
+        reach here, so live reads see new values while the connection stays up;
+        on error the old config is kept and the caller does a full reload.
+        """
+        try:
+            model_cls = type(self.config)
+            if hasattr(model_cls, "model_validate"):
+                self.config = model_cls.model_validate(section)
+            else:
+                self.config = dict(section)
+        except Exception:  # noqa: BLE001 - a rejected section must not strand the adapter
+            logger.debug("refresh_config rejected section for %s", self.name, exc_info=True)
+            return False
+        return True
 
     @abstractmethod
     async def start(self) -> None:
