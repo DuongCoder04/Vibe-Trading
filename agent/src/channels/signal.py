@@ -369,14 +369,15 @@ class SignalChannel(BaseChannel):
 
     name = "signal"
     display_name = "Signal"
-    hot_reload_noop_keys = frozenset({"allow_from"})
+    # The top-level allow_from is computed; the writable policies are nested.
+    hot_reload_noop_keys = frozenset({"dm", "group"})
     _TYPING_REFRESH_SECONDS = 10.0
     _MAX_MESSAGE_LEN = 64_000  # signal-cli practical limit (protocol max ~64 KB)
     _HTTP_TIMEOUT_SECONDS = 60.0
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
-        return SignalConfig().model_dump(by_alias=True)
+        return SignalConfig().model_dump(by_alias=True, exclude={"allow_from"})
 
     def __init__(self, config: SignalConfig, bus: MessageBus):
         if isinstance(config, dict):

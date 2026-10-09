@@ -253,6 +253,8 @@ def walk_forward_analysis(
         win_eq = equity_curve.iloc[start_idx:end_idx]
         win_start = indices[start_idx]
         win_end = indices[end_idx - 1]
+        if not np.isfinite(win_eq.iloc[[0, -1]]).all():
+            return {"error": f"window {i + 1} requires observed start and end equity"}
 
         # Per-window trades
         win_trades = [t for t in trades if win_start <= t.entry_time <= win_end]
@@ -266,6 +268,8 @@ def walk_forward_analysis(
             .dropna()
             .values
         )
+        if not len(win_returns):
+            return {"error": f"window {i + 1} has no observed adjacent equity returns"}
         sharpe = _sharpe(win_returns, bars_per_year) if len(win_returns) > 1 else 0.0
 
         peak = win_eq.cummax()

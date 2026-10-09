@@ -125,7 +125,11 @@ def test_ignored_yaml_metadata_does_not_break_local_fetch(
 
 @pytest.mark.parametrize(
     "corruption",
-    ["null", "array", "index_names_length", "unhashable_index_column"],
+    [
+        "null", "array", "index_names_length", "unhashable_index_column",
+        "empty_object", "empty_index", "missing_index", "missing_names",
+        "wrong_version", "missing_attrs", "invalid_attrs",
+    ],
 )
 def test_corrupt_local_cache_metadata_refetches_and_repairs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str
@@ -157,6 +161,20 @@ def test_corrupt_local_cache_metadata_refetches_and_repairs(
         malformed = []
     elif corruption == "index_names_length":
         malformed["index_names"] = ["date", "unexpected_extra_level"]
+    elif corruption == "empty_object":
+        malformed = {}
+    elif corruption == "empty_index":
+        malformed["index_columns"] = []
+    elif corruption == "missing_index":
+        malformed.pop("index_columns")
+    elif corruption == "missing_names":
+        malformed.pop("index_names")
+    elif corruption == "wrong_version":
+        malformed["version"] = -1
+    elif corruption == "missing_attrs":
+        malformed.pop("frame_attrs")
+    elif corruption == "invalid_attrs":
+        malformed["frame_attrs"] = {"adjustment": ["qfq"]}
     else:
         malformed["index_columns"] = [{"not": "a column name"}]
     metadata_path.write_text(json.dumps(malformed))

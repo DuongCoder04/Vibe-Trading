@@ -286,3 +286,30 @@ def test_notice_content_never_echoes_config_values(
         for item in items:
             if isinstance(item, str) and item:
                 assert item not in notice.content
+
+
+@pytest.mark.parametrize("url", [
+    "https://user:pass@word@host:99999/x",
+    "https://user:pass@word@[::1]:8443/x",
+])
+def test_reset_reason_strips_the_entire_userinfo(url: str) -> None:
+    reason = routes._sanitize_reset_reason(RuntimeError(f"failed ({url})\nretry later"))
+    assert "pass" not in reason
+    assert "word" not in reason
+    assert "\n" not in reason
+
+
+def test_reset_reason_does_not_expose_a_stored_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, old_runtime, _ = _arrange(
+        tmp_path, monkeypatch, last_chat=None, fail_reload=True,
+    )
+
+    async def fail(name, section):
+        raise RuntimeError(f"SDK refused credential {STORED_SECRET}")
+
+    old_runtime.manager.reload_channel = fail
+    body = _put_rotated_id(client)
+    assert body["applied"] == "reset"
+    assert STORED_SECRET not in body["reset_reason"]

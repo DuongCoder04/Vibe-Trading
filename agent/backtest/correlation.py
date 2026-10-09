@@ -120,18 +120,14 @@ def _normalize_symbol(code: str, market: str) -> str:
         if re.fullmatch(r"[A-Z]{2,}USDT", cleaned):
             return f"{cleaned[:-4]}-USDT"
         return cleaned
+    if market == "hk_equity":
+        hk = re.fullmatch(r"(\d{1,5})(?:\.HK)?", cleaned)
+        if hk:
+            # HKEX's five-digit display and four-digit Yahoo spelling can
+            # name the same counter. Only discard redundant leading zeroes;
+            # genuine five-digit counters (e.g. 80700) remain distinct.
+            return f"{int(hk.group(1)):04d}.HK"
     if re.search(r"\.(US|HK|SH|SZ|BJ|KS|KQ|NS|BO|TO|V|BA|L|VN|FX)$", cleaned):
-        # HK codes are zero-padded to four digits on the bare path below; the
-        # suffixed spelling must land on the same key, or the duplicate-asset
-        # guard misses one instrument written as `700` and `700.HK`.
-        hk = re.fullmatch(r"(\d{1,5})\.HK", cleaned)
-        if market == "hk_equity" and hk:
-            # zfill pads a 4-digit code and never truncates, so a 5-digit HKEX
-            # spelling (``00700.HK``) keeps its own key while ``700``, ``0700``
-            # and ``700.HK`` all land on ``0700.HK``. Collapsing the 5-digit
-            # form would change the symbol sent to the loaders, so that is a
-            # market-data decision rather than part of this normalization.
-            return f"{hk.group(1).zfill(4)}.HK"
         return cleaned
     upper = cleaned.upper()
     if market == "us_equity":

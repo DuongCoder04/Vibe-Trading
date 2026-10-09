@@ -286,3 +286,58 @@ def test_route_falls_back_to_hot_apply(
     assert response.json()["applied"] == "hot_swapped"
     assert [name for name, _ in manager.reload_calls] == ["dingtalk"]
     assert bool(manager.refresh_calls) is expect_refresh_called
+
+
+@pytest.mark.parametrize("allow_from", [["alice"], ["*"]])
+def test_full_form_echo_does_not_restart_for_unchanged_connection_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, allow_from: list[str]
+) -> None:
+    manager = _FakeManager()
+    client = _client(
+        tmp_path, monkeypatch, channels={"dingtalk": _dingtalk_section()},
+        runtime=_FakeRuntime(running=True, manager=manager),
+    )
+    entry = client.get("/channels/config").json()["channels"]["dingtalk"]
+    patch = dict(entry["values"], allow_from=allow_from)
+    response = client.put("/channels/config/dingtalk", json={"config": patch})
+    assert response.status_code == 200, response.text
+    assert response.json()["applied"] == "refreshed"
+    assert manager.refresh_calls[0][1]["allow_from"] == allow_from
+    assert manager.reload_calls == []
+
+
+def test_signal_refresh_changes_the_real_nested_allowlist() -> None:
+    from src.channels.signal import SignalChannel
+
+    channel = SignalChannel({"dm": {"allow_from": ["alice"]}}, MessageBus())
+    assert "allow_from" not in channel.hot_reload_noop_keys
+    assert {"dm", "group"} <= channel.hot_reload_noop_keys
+    assert channel.refresh_config({"dm": {"allow_from": ["bob"]}})
+    assert channel.is_allowed("bob")
+    assert not channel.is_allowed("alice")
+
+
+def test_signal_policy_put_refreshes_without_counting_computed_fields(tmp_path, monkeypatch):
+    from src.channels.signal import SignalChannel
+
+    section = {"enabled": True, "dm": {"allow_from": ["alice"]}}
+    channel = SignalChannel(section, MessageBus())
+    manager = _FakeManager()
+    monkeypatch.setattr(manager, "get_channel", lambda name: channel)
+
+    async def refresh(name, fresh):
+        manager.refresh_calls.append((name, fresh))
+        return channel.refresh_config(fresh)
+
+    monkeypatch.setattr(manager, "refresh_channel_config", refresh)
+    client = _client(
+        tmp_path, monkeypatch, channels={"signal": section},
+        runtime=_FakeRuntime(running=True, manager=manager),
+    )
+    response = client.put(
+        "/channels/config/signal", json={"config": {"dm": {"allow_from": ["bob"]}}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["applied"] == "refreshed"
+    assert manager.reload_calls == []
+    assert channel.is_allowed("bob") and not channel.is_allowed("alice")

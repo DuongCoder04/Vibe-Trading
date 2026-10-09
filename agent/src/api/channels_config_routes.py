@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import sys as _sys
 from collections import defaultdict
 from pathlib import Path
@@ -34,6 +33,7 @@ from src.api import state as _state
 from src.channels import config as _channels_config
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
+from src.channels.manager import _strip_url_userinfo as _strip_error_url_userinfo
 from src.channels.config_meta import (
     _strip_url_userinfo,
     channel_field_hints,
@@ -59,7 +59,6 @@ _FALLBACK_STOP_TIMEOUT_S = 10.0
 
 # Sanitized reset_reason bounds: exception text may embed credentials in URLs.
 _RESET_REASON_MAX_LEN = 200
-_URL_USERINFO_RE = re.compile(r"(\w[\w+.-]*://)[^\s/@]+@")
 
 # Per-channel lifecycle keys the manager consumes from the section; they are
 # not adapter model fields but are legitimate config content (#341 lineage).
@@ -293,9 +292,17 @@ def _scrub_detail(name: str, text: Any, section: dict[str, Any]) -> str:
     """Mask every secret value of *section* found in *text* (defense in depth)."""
     cleaned = str(text or "")
     for key, value in section.items():
-        if _is_secret_key(name, key) and isinstance(value, str) and value:
-            cleaned = cleaned.replace(value, "***")
-    return cleaned
+        if isinstance(value, str) and value:
+            if _is_secret_key(name, key):
+                cleaned = cleaned.replace(value, "***")
+            else:
+                # A known config URL can contain malformed userinfo, including
+                # spaces. Scrub the whole value before parsing free-text URLs,
+                # whose boundary must stop at prose whitespace.
+                redacted = _strip_url_userinfo(value)
+                if redacted != value:
+                    cleaned = cleaned.replace(value, redacted)
+    return _strip_error_url_userinfo(cleaned)
 
 
 def _validation_fields(exc: ValidationError) -> list[str]:
@@ -360,9 +367,15 @@ def format_reset_notice() -> str:
     return "Channel configuration updated; connections were reset."
 
 
-def _sanitize_reset_reason(exc: BaseException) -> str:
+def _sanitize_reset_reason(
+    exc: BaseException, *, name: str = "", sections: tuple[dict[str, Any], ...] = ()
+) -> str:
     """Return a bounded, credential-free one-line reason for a degraded reset (#1625)."""
-    return _URL_USERINFO_RE.sub(r"\1", f"{type(exc).__name__}: {exc}")[:_RESET_REASON_MAX_LEN]
+    text = f"{type(exc).__name__}: {exc}"
+    for section in sections:
+        text = _scrub_detail(name, text, section)
+    text = _strip_error_url_userinfo(text)
+    return " ".join(text.split())[:_RESET_REASON_MAX_LEN]
 
 
 async def _publish_reset_notice(runtime: Any, name: str, chat_id: str) -> None:
@@ -385,7 +398,10 @@ async def _publish_reset_notice(runtime: Any, name: str, chat_id: str) -> None:
         logger.warning("Reset notice for %s was not published", name, exc_info=True)
 
 
-async def _hot_apply(name: str, section: dict[str, Any] | None) -> tuple[str, str | None]:
+async def _hot_apply(
+    name: str, section: dict[str, Any] | None,
+    *, previous_section: dict[str, Any] | None = None,
+) -> tuple[str, str | None]:
     """Apply a written section to the cached runtime; return ``(applied, reason)``.
 
     Running runtime → per-channel hot swap; built-but-stopped → drop the stale
@@ -408,10 +424,12 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> tuple[str, st
         await runtime.manager.reload_channel(name, section)
         return "hot_swapped", None
     except Exception as exc:  # noqa: BLE001 - a failed swap must not strand the runtime
+        reason = _sanitize_reset_reason(
+            exc, name=name, sections=(previous_section or {}, section or {}),
+        )
         logger.warning(
-            "Hot reload failed for channel %s; falling back to a runtime reset",
-            name,
-            exc_info=True,
+            "Hot reload failed for channel %s; falling back to a runtime reset: %s",
+            name, reason,
         )
         # The reset destroys the old manager, so capture the notify target —
         # the last chat we sent to — before its state is gone.
@@ -430,7 +448,7 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> tuple[str, st
             await fresh.start(start_manager=True)
         if last_chat_id is not None:
             await _publish_reset_notice(fresh, name, last_chat_id)
-        return "reset", _sanitize_reset_reason(exc)
+        return "reset", reason
 
 
 async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[str, Any]:
@@ -492,19 +510,30 @@ async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[
     fresh = _stored_section(name)
     # Noop-key edits (declared keys + manager bool overrides) are read live per
     # message, so refresh in place; ``enabled`` never qualifies (start/stop, #1625).
-    changed = set(patch) | set(clears)
+    before = _effective_section(name, stored)
+    after = _effective_section(name, fresh)
+    model = type(instance.config)
+    if hasattr(model, "model_validate"):
+        # Web text widgets serialize numbers as strings; compare validated
+        # values and defaults so an echoed connection field is not an edit.
+        computed = set(model.model_computed_fields)
+        try:
+            before.update(model.model_validate(stored).model_dump(by_alias=True, exclude=computed))
+        except Exception:  # an edit may be repairing an invalid stored section
+            pass
+        after.update(instance.config.model_dump(by_alias=True, exclude=computed))
+    changed = {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)}
     noop_keys = cls.hot_reload_noop_keys | _MANAGER_OVERRIDE_KEYS
     runtime = getattr(_host(), "_channel_runtime", None)
     if (
-        changed
-        and changed <= noop_keys
+        changed <= noop_keys
         and runtime is not None
         and runtime.status().get("running")
         and runtime.manager.get_channel(name) is not None
         and await runtime.manager.refresh_channel_config(name, fresh)
     ):
         return {"channel": _fresh_entry(name), "applied": "refreshed"}
-    applied, reset_reason = await _hot_apply(name, fresh or None)
+    applied, reset_reason = await _hot_apply(name, fresh or None, previous_section=stored)
     response: dict[str, Any] = {"channel": _fresh_entry(name), "applied": applied}
     if reset_reason is not None:
         response["reset_reason"] = reset_reason
@@ -514,7 +543,9 @@ async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[
 async def _run_test(name: str, body: dict[str, Any] | None, clears: list[str]) -> dict[str, Any]:
     """Probe credentials on an ephemeral instance; never persists anything."""
     stored = _stored_section(name)
-    patch = _normalize_nullable_blanks(name, _patch_of(name, body or {}))
+    patch = _drop_echoed_url_rewrites(
+        stored, _normalize_nullable_blanks(name, _patch_of(name, body or {})),
+    )
     merged = {**stored, **patch}
     for key in clears:
         merged.pop(key, None)
@@ -550,7 +581,10 @@ async def _run_test(name: str, body: dict[str, Any] | None, clears: list[str]) -
     except Exception as exc:  # noqa: BLE001 - a broken section cannot be probed
         return _result(False, "invalid_credentials", f"validation_error: {type(exc).__name__}", sdk_fallback)
 
-    probe = await instance.test_connection()
+    try:
+        probe = await instance.test_connection()
+    except Exception as exc:  # probe adapters may also raise SDK/network errors
+        probe = {"ok": False, "code": "network", "detail": f"{type(exc).__name__}: {exc}"}
     code = probe.get("code")
     sdk_available = probe.get("sdk_available")
     return _result(

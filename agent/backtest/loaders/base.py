@@ -714,6 +714,26 @@ def _read_loader_cache_frame(cache_path: Path) -> pd.DataFrame | None:
     metadata_path = _loader_cache_metadata_path(cache_path)
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        # Every cache frame, including one with an unnamed RangeIndex, writes
+        # explicit index metadata. Accepting {} or [] here silently turns a
+        # dated series into row numbers and drops its adjustment/currency.
+        if not isinstance(metadata, dict) or metadata.get("version") != _LOADER_CACHE_VERSION:
+            raise ValueError("missing or incompatible cache metadata version")
+        index_columns = metadata.get("index_columns")
+        index_names = metadata.get("index_names")
+        frame_attrs = metadata.get("frame_attrs")
+        if (
+            not isinstance(index_columns, list) or not index_columns
+            or not all(isinstance(column, str) for column in index_columns)
+            or len(set(index_columns)) != len(index_columns)
+            or not isinstance(index_names, list) or len(index_names) != len(index_columns)
+            or not isinstance(frame_attrs, dict)
+            or any(
+                name in frame_attrs and not isinstance(frame_attrs[name], str)
+                for name in _LOADER_FRAME_METADATA_ATTRS
+            )
+        ):
+            raise ValueError("invalid cache index or frame metadata")
     except Exception as exc:  # noqa: BLE001 - local cache miss is non-fatal
         logger.warning(
             "loader cache metadata read failed for %s: %s", cache_path.name, exc

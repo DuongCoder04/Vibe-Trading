@@ -654,6 +654,30 @@ def test_enable_probe_uses_the_stored_url_not_the_echoed_stripped_one(
     assert "proxy-secret" not in response.text
 
 
+def test_connection_test_keeps_echoed_url_credentials(tmp_path, monkeypatch) -> None:
+    proxy = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path, monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": proxy}},
+    )
+    probed = []
+
+    async def probe(self):
+        probed.append(self.config.proxy)
+        return {"ok": True, "code": "ok", "detail": ""}
+
+    cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(cls, "supports_connection_test", True)
+    monkeypatch.setattr(cls, "test_connection", probe)
+    values = client.get("/channels/config").json()["channels"]["discord"]["values"]
+    response = client.post("/channels/discord/test", json={"config": values})
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"]
+    assert probed == [proxy]
+    assert "proxy-secret" not in response.text
+    assert json.loads(path.read_text())["channels"]["discord"]["proxy"] == proxy
+
+
 def test_put_feishu_enable_with_bad_credentials_is_blocked_before_write(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1507,3 +1531,41 @@ def test_email_pdf_password_config_exposes_presence_only(tmp_path, monkeypatch):
     client, _path = _client(tmp_path, monkeypatch, channels={"email": _email_section()})
     entry = client.get("/channels/config").json()["channels"]["email"]
     assert entry["pdf_password_configured"] is False
+
+
+@pytest.mark.parametrize("endpoint", ["test", "enable"])
+@pytest.mark.parametrize("raises", [False, True])
+@pytest.mark.parametrize("password", ["pass@word", "pass word"])
+def test_probe_failures_redact_url_credentials_and_do_not_write(
+    tmp_path, monkeypatch, endpoint, raises, password,
+) -> None:
+    """Both probe entry points sanitize returned errors and raised exceptions."""
+    proxy = f"http://proxy-user:{password}@proxy.local:notaport"
+    client, path = _client(
+        tmp_path, monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": proxy, "token": STORED_SECRET}},
+    )
+    before = path.read_bytes()
+
+    async def probe(self):
+        detail = f"Failed via {self.config.proxy}; token={self.config.token}"
+        if raises:
+            raise RuntimeError(detail)
+        return {"ok": False, "code": "network", "detail": detail}
+
+    cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(cls, "supports_connection_test", True)
+    monkeypatch.setattr(cls, "test_connection", probe)
+    if endpoint == "test":
+        response = client.post("/channels/discord/test", json={"config": {}})
+        assert response.status_code == 200, response.text
+        assert response.json()["code"] == "network"
+        assert response.json()["ok"] is False
+    else:
+        response = client.put("/channels/config/discord", json={"config": {"enabled": True}})
+        assert response.status_code == 422, response.text
+    assert "proxy-user" not in response.text
+    assert password not in response.text
+    assert STORED_SECRET not in response.text
+    assert "proxy.local:notaport" in response.text
+    assert path.read_bytes() == before

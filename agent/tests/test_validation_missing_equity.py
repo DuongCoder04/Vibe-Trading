@@ -78,3 +78,29 @@ def test_loaded_equity_gap_reaches_validation_sample_guard(tmp_path) -> None:
     )
 
     assert result["bootstrap"] == {"error": "need at least 5 return observations"}
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [float("nan"), 100, 110, 99],
+        [100, 110, 99, float("nan")],
+        [float("nan")] * 4,
+        [100, float("nan"), float("nan"), 110],
+    ],
+    ids=["missing-start", "missing-end", "empty-window", "no-adjacent-pair"],
+)
+def test_walk_forward_refuses_unmeasurable_window(values) -> None:
+    """No boundary value or no observed period cannot become a zero score."""
+    equity = pd.Series(values, index=pd.date_range("2026-01-01", periods=4))
+    result = walk_forward_analysis(equity, [], n_windows=1)
+    assert "error" in result
+    assert "window 1" in result["error"]
+    assert "sharpe_mean" not in result
+
+
+def test_walk_forward_does_not_silently_drop_an_unmeasurable_window() -> None:
+    equity = pd.Series([100, 110, 99, 108.9, float("nan"), 120, 132, 118.8])
+    result = walk_forward_analysis(equity, [], n_windows=2)
+    assert "error" in result and "window 2" in result["error"]
+    assert "consistency_rate" not in result

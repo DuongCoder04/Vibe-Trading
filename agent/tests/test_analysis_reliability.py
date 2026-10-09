@@ -99,7 +99,10 @@ def test_duplicate_aliases_rejected_before_any_fetch(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "pair", [("700", "700.HK"), ("9988", "9988.HK"), ("00700", "00700.HK")]
+    "pair", [
+        ("700", "700.HK"), ("9988", "9988.HK"), ("00700", "00700.HK"),
+        ("00700.HK", "0700.HK"), ("00005.HK", "5"),
+    ]
 )
 def test_hk_spellings_of_one_instrument_are_rejected_as_duplicates(pair, monkeypatch):
     """A bare HK code and its suffixed spelling must normalize to one key.
@@ -119,6 +122,13 @@ def test_hk_spellings_of_one_instrument_are_rejected_as_duplicates(pair, monkeyp
     with pytest.raises(ValueError, match="distinct"):
         correlation.compute_correlation_analysis(list(pair))
     fetch.assert_not_called()
+
+
+def test_hk_normalization_preserves_distinct_currency_counters():
+    """Remove redundant zeroes without truncating a real five-digit counter."""
+    assert correlation._normalize_symbol("80700.HK", "hk_equity") == "80700.HK"
+    assert correlation._normalize_symbol("80700", "hk_equity") == "80700.HK"
+    assert correlation._normalize_symbol("00700.HK", "hk_equity") == "0700.HK"
 
 
 def test_readiness_snapshots_and_single_asset_validation():
