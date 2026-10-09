@@ -37,7 +37,10 @@ from src.quantlib.options import bs_greeks, bs_price, normalise_option_type
 
 
 def historical_volatility(
-    close: pd.Series, window: int = 30, default_iv: float = 0.3
+    close: pd.Series,
+    window: int = 30,
+    default_iv: float = 0.3,
+    bars_per_year: int | None = 252,
 ) -> pd.Series:
     """Calculate annualised historical volatility from a close price series.
 
@@ -48,12 +51,20 @@ def historical_volatility(
             (the leading warm-up and NaN gaps). Backfilling the first computed
             window here would price bars before it with information from the
             window's own end (#1293).
+        bars_per_year: Bars per elapsed calendar year on this series' own
+            cadence. ``None`` is the cross-market convention the runner passes
+            (#1239) and resolves through ``effective_bars_per_year`` from the
+            observed span, exactly as the metrics do -- so a leg is priced and
+            graded on one cadence instead of two. Crypto venues serve 365 daily
+            bars and okx hourly bars 8760, neither of which is 252.
 
     Returns:
         Annualised historical volatility Series.
     """
+    if bars_per_year is None:
+        bars_per_year = effective_bars_per_year(close.index)
     log_ret = np.log(close / close.shift(1))
-    hv = log_ret.rolling(window=window).std() * np.sqrt(252)
+    hv = log_ret.rolling(window=window).std() * np.sqrt(bars_per_year)
     return hv.fillna(default_iv)
 
 
@@ -238,10 +249,15 @@ def run_options_backtest(
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
 
-    # Compute implied volatility (approximated by historical volatility)
+    # Compute implied volatility (approximated by historical volatility) on the
+    # cadence this run is annualised on, so legs are priced and graded alike.
+    # Each code resolves a None from its own span: a cross-market basket has no
+    # single factor, which is why the runner passes None at all.
     iv_map: Dict[str, pd.Series] = {}
     for code, df in data_map.items():
-        iv_map[code] = historical_volatility(df["close"], default_iv=default_iv)
+        iv_map[code] = historical_volatility(
+            df["close"], default_iv=default_iv, bars_per_year=bars_per_year
+        )
 
     # Generate trade signals
     signals = engine.generate(data_map)
