@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 import api_server
@@ -24,6 +25,7 @@ from src.channels.base import BaseChannel
 from src.channels.bus.queue import MessageBus
 from src.channels.feishu import FeishuChannel, FeishuConfig
 from src.channels.manager import ChannelManager
+from src.channels.weixin import WeixinChannel
 
 CLIENT_ID = "ding-client-id-1234567890"
 STORED_SECRET = "stored-secret-abcdefghij"
@@ -341,3 +343,56 @@ def test_signal_policy_put_refreshes_without_counting_computed_fields(tmp_path, 
     assert response.json()["applied"] == "refreshed"
     assert manager.reload_calls == []
     assert channel.is_allowed("bob") and not channel.is_allowed("alice")
+
+
+def test_weixin_refresh_preserves_the_authenticated_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv('VIBE_TRADING_HOME', str(tmp_path))
+    section = {'enabled': True, 'state_dir': str(tmp_path), 'allow_from': ['alice']}
+    (tmp_path / 'account.json').write_text(json.dumps({
+        'token': 'synthetic-only-token', 'base_url': 'https://region.example.test',
+    }))
+    channel = WeixinChannel(section, MessageBus())
+    assert channel._load_state()
+    manager = ChannelManager({}, channel.bus)
+    manager.channels['weixin'] = channel
+    seen = []
+
+    def reply(request):
+        seen.append(request.url.host)
+        return httpx.Response(200, json={'ok': True})
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as client:
+            channel._client = client
+            await channel._api_get('ilink/bot/getupdates')
+            assert await manager.refresh_channel_config('weixin', dict(section, allow_from=['bob']))
+            assert channel.config.allow_from == ['bob']
+            await channel._api_get('ilink/bot/getupdates')
+
+    asyncio.run(scenario())
+    assert seen == ['region.example.test', 'region.example.test']
+
+
+@pytest.mark.parametrize("allow_from", [["bob"], []])
+def test_weixin_full_form_preserves_login_state_and_can_clear_allowlist(tmp_path, monkeypatch, allow_from):
+    section = {"enabled": True, "state_dir": str(tmp_path), "allow_from": ["alice"]}
+    (tmp_path / "account.json").write_text(json.dumps({
+        "token": "synthetic-only-token", "base_url": "https://region.example.test",
+    }))
+    channel = WeixinChannel(section, MessageBus())
+    assert channel._load_state()
+    manager = ChannelManager({}, channel.bus)
+    manager.channels["weixin"] = channel
+    client = _client(
+        tmp_path, monkeypatch, channels={"weixin": section},
+        runtime=_FakeRuntime(running=True, manager=manager),
+    )
+    values = client.get("/channels/config").json()["channels"]["weixin"]["values"]
+    response = client.put("/channels/config/weixin", json={"config": dict(values, allow_from=allow_from)})
+    assert response.status_code == 200, response.text
+    assert response.json()["applied"] == "refreshed"
+    assert manager.channels["weixin"] is channel
+    assert channel.config.allow_from == allow_from
+    assert channel.config.base_url == "https://region.example.test"
+    channel._save_state()
+    assert json.loads((tmp_path / "account.json").read_text())["base_url"] == "https://region.example.test"

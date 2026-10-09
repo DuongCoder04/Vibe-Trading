@@ -1,24 +1,8 @@
-"""Regression: the vol that prices option legs must annualise on the run's cadence.
+"""Options pricing uses the supplied cadence or a causal per-bar estimate.
 
-``run_options_backtest`` already receives the runner-resolved ``bars_per_year``
-and forwards it to ``_calc_options_metrics``, where ``None`` is resolved through
-``backtest.metrics.effective_bars_per_year`` -- the shared span-derived factor
-whose own docstring promises that "the Sharpe, the annualised volatility, and
-the validation Sharpe in a single run card are annualised identically".
-
-``historical_volatility`` is that annualised volatility for the options engine:
-it produces the per-bar vol every leg is opened, marked and greeked at. It
-annualised at a hardcoded ``np.sqrt(252)`` and its call site never forwarded the
-factor the run already knew, so a venue that does not trade 252 bars a year
-priced its legs on one cadence and reported its metrics on another. Every crypto
-source maps to 365 daily bars, and okx hourly bars to 8760, so an at-the-money
-30-day call was marked roughly 16% too cheap on a daily crypto run and far worse
-intraday -- silently, into ``trades.csv``, ``greeks.csv``, ``equity.csv``,
-``metrics.csv`` and the ``backtest_summary`` tool result.
-
-Same convention as ``8afa3879`` ("fix(portfolio): annualize weekly and monthly
-risk bars correctly"), which resolved the risk x-ray's hardcoded 252 through
-``calc_bars_per_year``; this is the options engine's copy of that bug.
+Cross-market pricing may use timestamps known at the current bar only.
+Finished-run reporting metrics may use their full span, but reusing that span
+to price earlier trades creates lookahead.
 """
 
 from __future__ import annotations
@@ -76,21 +60,35 @@ def test_hv_defaults_to_252_so_daily_equity_runs_are_unchanged() -> None:
     )
 
 
-def test_hv_none_resolves_from_the_observed_span() -> None:
-    """``None`` means cross-market: measure the cadence, as the metrics do.
-
-    The runner passes ``bars_per_year=None`` for a basket that spans markets
-    (#1239). Restated here from the documented convention rather than by
-    calling the helper, so the test pins the convention and not the code.
-    """
+def test_hv_none_resolves_daily_return_cadence_causally() -> None:
+    """Daily return intervals annualise to calendar days, without future bars."""
     close = _alternating_close()
-    span_days = (close.index[-1] - close.index[0]).days
-    expected_factor = int(len(close) / (span_days / 365.25))
+    expected_factor = 365.25
     assert expected_factor != 252, "fixture must exercise a non-default factor"
 
     hv = historical_volatility(close, default_iv=DEFAULT_IV, bars_per_year=None)
 
     pd.testing.assert_series_equal(hv, _annualised_hv(close, expected_factor))
+
+
+@pytest.mark.parametrize("frequency,yearly", [("1min", 365.25 * 1440), ("1h", 365.25 * 24), ("7D", 365.25 / 7)])
+def test_cross_market_hv_preserves_elapsed_subday_and_weekly_intervals(frequency, yearly):
+    close = _alternating_close()
+    close.index = pd.date_range("2024-01-01", periods=len(close), freq=frequency)
+    pd.testing.assert_series_equal(
+        historical_volatility(close, bars_per_year=None), _annualised_hv(close, yearly),
+    )
+
+
+@pytest.mark.parametrize("frequency", ["D", "B", "1h", "1min"])
+def test_future_cadence_changes_cannot_change_past_volatility(frequency):
+    close = _alternating_close()
+    past_dates = pd.date_range("2024-01-01", periods=45, freq=frequency)
+    future_dates = pd.date_range(past_dates[-1] + pd.Timedelta(days=10), periods=15, freq="7D")
+    close.index = past_dates.append(future_dates)
+    past = historical_volatility(close.iloc[:45], bars_per_year=None)
+    extended = historical_volatility(close, bars_per_year=None).iloc[:45]
+    pd.testing.assert_series_equal(past, extended)
 
 
 class _SingleCodeLoader:
@@ -198,17 +196,50 @@ def test_options_backtest_prices_the_leg_on_the_run_cadence(tmp_path: Path) -> N
     assert (expected - stale) / expected == pytest.approx(0.16, abs=0.01)
 
 
-def test_options_backtest_cross_market_none_prices_on_the_observed_span(
+def test_options_backtest_cross_market_none_prices_on_causal_cadence(
     tmp_path: Path,
 ) -> None:
     """``bars_per_year=None`` must reach pricing too, not just the metrics."""
     close = _alternating_close()
     fill_bar = close.index[41]
-    span_days = (close.index[-1] - close.index[0]).days
-    factor = int(len(close) / (span_days / 365.25))
+    factor = 365.25
 
     price, strike, spot = _run_one_call(tmp_path, bars_per_year=None)
 
     sigma = float(_annualised_hv(close, factor).at[fill_bar])
     expected = bs_price(spot, strike, 30 / 365.0, 0.05, sigma, "call")
     assert price == pytest.approx(expected, abs=1e-4)
+
+
+def _run_call_prefix(path, count, bars_per_year):
+    dates = pd.date_range('2026-01-01', periods=80)
+    values = 100 * np.exp(np.cumsum(np.where(np.arange(80) % 2, 0.02, -0.015)))
+    close = pd.Series(values[:count], index=dates[:count])
+
+    class Loader:
+        def fetch(self, codes, *args, **kwargs):
+            return {code: pd.DataFrame({'open': close, 'close': close}) for code in codes}
+
+    class Signals:
+        def generate(self, data):
+            return [{
+                'date': str(dates[40].date()), 'action': 'open', 'underlying': 'BTC-USDT',
+                'legs': [{'type': 'call', 'strike': float(values[41]),
+                          'expiry': str((dates[41] + pd.Timedelta(days=30)).date()), 'qty': 1}],
+            }]
+
+    run_options_backtest(
+        {'codes': ['BTC-USDT', 'AAPL.US'], 'source': 'auto', 'engine': 'options',
+         'start_date': str(dates[0].date()), 'end_date': str(dates[count-1].date()),
+         'initial_cash': 1_000_000., 'options_config': {'margin_enabled': False}},
+        Loader(), Signals(), path, bars_per_year=bars_per_year,
+    )
+    trades = pd.read_csv(path / 'artifacts' / 'trades.csv')
+    return float(trades[trades['side'] == 'buy'].iloc[0]['price'])
+
+
+@pytest.mark.parametrize('factor', [None, 365], ids=['cross-market', 'fixed-cadence-control'])
+def test_future_bars_do_not_reprice_a_past_option_fill(tmp_path, factor):
+    prefix = _run_call_prefix(tmp_path / 'prefix', 45, factor)
+    extended = _run_call_prefix(tmp_path / 'extended', 80, factor)
+    assert extended == pytest.approx(prefix, abs=1e-10)

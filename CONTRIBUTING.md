@@ -199,6 +199,9 @@ configuration with no per-channel frontend code.
    `self.config`. Such edits are revalidated and applied without reconnecting;
    connection settings and enable transitions still reload the adapter. A
    computed field is not writable (Signal's policies live under `dm`/`group`).
+   Refresh copies only declared live fields into the current validated config,
+   preserving connection state resolved during login (such as WeChat's server
+   address). Do not replace the entire runtime config with the stored section.
    The Web UI reports the apply outcome. A failed hot swap that requires a full
    reset returns a bounded, sanitized reason and sends a best-effort notice to
    the changed channel's last outbound chat.

@@ -146,6 +146,23 @@ def test_readiness_snapshots_and_single_asset_validation():
         alpha_routes.ALPHA_BENCH_JOBS.pop(job_id, None)
 
 
+@pytest.mark.parametrize("token,ready", [("", False), (" \t\n", False), ("synthetic-token", True)])
+def test_alpha_readiness_requires_a_nonblank_tushare_token(monkeypatch, token, ready):
+    from src.config import accessor
+
+    config = accessor.get_env_config()
+    config = config.model_copy(update={"data": config.data.model_copy(update={"tushare_token": token})})
+    monkeypatch.setattr(accessor, "get_env_config", lambda: config)
+    find_spec = alpha_routes.importlib.util.find_spec
+    monkeypatch.setattr(
+        alpha_routes.importlib.util, "find_spec",
+        lambda name: object() if name == "tushare" else find_spec(name),
+    )
+    client = TestClient(api_server.app, client=("127.0.0.1", 50000))
+    status = client.get("/alpha/readiness").json()["universes"]["csi300"]
+    assert status == {"ready": ready, "reason": "tushare_ready" if ready else "tushare_token_missing"}
+
+
 def test_lost_submission_response_reuses_job_and_refuses_changed_parameters(monkeypatch):
     client = TestClient(api_server.app, client=("127.0.0.1", 50000))
     job_id = "a" * 32

@@ -52,7 +52,7 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
-- **2026-10-09** 🛠️ **渠道设置与回测修正**：渠道设置保留 URL 内嵌凭证，允许名单等实时读取的配置可不中断连接地更新；Web 以九种语言说明保存和重启结果（[#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)、[#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)、[#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)）。期权定价年化与运行口径一致，回撤纳入初始资金，验证不再为缺失净值制造收益。修正加密货币/港股识别和缓存恢复，mootdx 移出默认 A 股链。全部十三项 PR 见 [CHANGELOG](CHANGELOG.md)。
+- **2026-10-09** 🛠️ **渠道设置与回测修正**：原地更新渠道设置时保留 URL 内嵌凭证和微信认证后的服务地址，Web 以九种语言说明保存与重启结果（[#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)、[#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)、[#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)）。跨市场期权波动率仅使用截至当前时点的时间戳，回撤纳入初始资金。修正加密货币／贵金属数据源路由、港股重复识别、缓存恢复、科学计数金额解析及缺失净值验证；mootdx 移出默认 A 股链。全部十三项 PR 见 [CHANGELOG](CHANGELOG.md)。
 
 - **2026-10-08** 🔐 **PDF 报告密码保护与券商读取修复**：定时邮件 PDF 可选 AES-256 密码保护，覆盖 Web、CLI 模板和 Agent 确认入口；密码只保存在渠道私有配置中（[#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)）。KIS 读取三个交易场所的订单，明确过期的 token 只刷新一次，不完整的读取返回错误（[#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)）。派生公式保留说明标签之后的完整算式，证据核验规则保持不变（[#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)）。
 

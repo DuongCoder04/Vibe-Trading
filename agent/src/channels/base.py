@@ -89,19 +89,30 @@ class BaseChannel(ABC):
         return {"ok": False, "code": "unsupported"}
 
     def refresh_config(self, section: dict[str, Any]) -> bool:
-        """Swap in *section* without reconnecting; False if validation fails.
+        """Refresh declared live fields; preserve runtime connection state.
 
-        Re-validates via the same path ``__init__`` used (the config model's
-        ``model_validate``, else a dict copy). Only ``hot_reload_noop_keys``
-        reach here, so live reads see new values while the connection stays up;
-        on error the old config is kept and the caller does a full reload.
+        Validate the stored section, then copy only ``hot_reload_noop_keys``
+        into the current config. Login may have resolved connection fields
+        that are absent from storage, such as Weixin's authenticated base URL.
+        On validation failure keep the old config and request a full reload.
         """
         try:
             model_cls = type(self.config)
             if hasattr(model_cls, "model_validate"):
-                self.config = model_cls.model_validate(section)
+                computed = set(model_cls.model_computed_fields)
+                fresh = model_cls.model_validate(section).model_dump(by_alias=True, exclude=computed)
+                current = self.config.model_dump(by_alias=True, exclude=computed)
+                current.update({key: fresh[key] for key in self.hot_reload_noop_keys if key in fresh})
+                self.config = model_cls.model_validate(current)
             else:
-                self.config = dict(section)
+                fresh = {**self.default_config(), **section}
+                current = dict(self.config)
+                for key in self.hot_reload_noop_keys:
+                    if key in fresh:
+                        current[key] = fresh[key]
+                    else:
+                        current.pop(key, None)
+                self.config = current
         except Exception:  # noqa: BLE001 - a rejected section must not strand the adapter
             logger.debug("refresh_config rejected section for %s", self.name, exc_info=True)
             return False

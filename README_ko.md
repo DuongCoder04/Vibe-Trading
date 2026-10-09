@@ -52,7 +52,7 @@
 
 > ⚠️ **보안 경고:** X 계정 `VibeTrading_HKU`, Virtuals 프로젝트 `101845`, 토큰 컨트랙트 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4`는 모두 Vibe-Trading 공식과 무관합니다. Vibe-Trading은 어떠한 토큰이나 밈코인도 발행하거나 공식적으로 지지한 적이 없습니다. 해당 토큰을 구매하거나 지갑을 연결하거나 어떠한 서명도 하지 마세요. [자세히 보기](SECURITY.md#official-channels--impersonation).
 
-- **2026-10-09** 🛠️ **채널 설정 및 백테스트 수정**: URL에 포함된 인증 정보를 보존하고 연결에 영향을 주지 않는 설정은 재연결 없이 적용합니다. 저장·재시작 결과를 웹에서 9개 언어로 표시합니다 ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). 옵션 가격의 연율화와 초기 자금을 반영한 낙폭을 수정하고, 누락된 자산 값에서 수익률을 만들어 내지 않습니다. 암호화폐·홍콩 주식 식별과 캐시 복구를 개선하고 기본 A주 경로에서 mootdx를 제외했습니다. 13개 PR은 [CHANGELOG](CHANGELOG.md)를 참조하세요.
+- **2026-10-09** 🛠️ **채널 설정 및 백테스트 수정**: 재연결 없는 설정 업데이트에서 URL 인증 정보와 WeChat 인증 후 서버 주소를 보존하며, 저장·재시작 결과를 웹에서 9개 언어로 표시합니다 ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). 여러 시장의 옵션 변동성은 각 시점까지 알려진 타임스탬프만 사용하고, 낙폭은 초기 자금을 반영합니다. 암호화폐·귀금속 데이터 경로, 홍콩 주식 중복 판별, 캐시 복구, 과학적 표기 금액 및 누락된 자산 값 검증을 수정했습니다. 기본 A주 경로에서 mootdx를 제외했습니다. 13개 PR은 [CHANGELOG](CHANGELOG.md)를 참조하세요.
 
 - **2026-10-08** 🔐 **PDF 보고서 비밀번호 보호와 증권사 조회 수정**: 예약 이메일 PDF에 AES-256 보호를 선택할 수 있으며 Web, CLI 및 에이전트 확인에 반영됩니다. 비밀번호는 비공개 채널 설정에만 저장합니다([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS는 세 거래 경로를 조회하고 명시적으로 만료된 토큰을 한 번만 갱신하며 불완전한 조회는 오류로 처리합니다([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). 설명 뒤의 전체 파생 수식을 보존하고 증거 검증을 유지합니다([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
 

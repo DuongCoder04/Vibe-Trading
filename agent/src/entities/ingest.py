@@ -174,7 +174,8 @@ def _to_plain_number(text: str, decimal_separator: str | None) -> str:
             f"{text.replace(',', '.')} (comma is the decimal separator); pass "
             "decimal_separator='.' or decimal_separator=',' to say which"
         )
-    if has_dot and text.count(".") == 1 and len(text.rpartition(".")[2]) == 3:
+    dot_tail = text.rpartition(".")[2]
+    if has_dot and text.count(".") == 1 and len(dot_tail) == 3 and dot_tail.isdigit():
         # A lone dot followed by anything other than exactly three digits can
         # only be a decimal point -- European grouping never uses a group of
         # that width. Three digits is where it turns genuinely ambiguous.

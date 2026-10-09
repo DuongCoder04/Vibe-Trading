@@ -51,18 +51,23 @@ def historical_volatility(
             (the leading warm-up and NaN gaps). Backfilling the first computed
             window here would price bars before it with information from the
             window's own end (#1293).
-        bars_per_year: Bars per elapsed calendar year on this series' own
-            cadence. ``None`` is the cross-market convention the runner passes
-            (#1239) and resolves through ``effective_bars_per_year`` from the
-            observed span, exactly as the metrics do -- so a leg is priced and
-            graded on one cadence instead of two. Crypto venues serve 365 daily
-            bars and okx hourly bars 8760, neither of which is 252.
+        bars_per_year: Known annual bar count, or ``None`` for a cross-market
+            run. With ``None``, estimate each bar's cadence from return
+            intervals observed up to that bar, using elapsed seconds so
+            intraday bars retain their frequency. Future timestamps must not
+            affect historical prices; end-of-run metric annualisation is a
+            separate calculation.
 
     Returns:
         Annualised historical volatility Series.
     """
     if bars_per_year is None:
-        bars_per_year = effective_bars_per_year(close.index)
+        # An expanding mean of elapsed return intervals is causal, including
+        # weekends and market closures already observed. Count intervals, not
+        # prices: n prices contain n - 1 returns. Preserve fractional days.
+        spacing = pd.Series(close.index, index=close.index).diff().dt.total_seconds()
+        mean_spacing = spacing.expanding().mean()
+        bars_per_year = pd.Timedelta(days=365.25).total_seconds() / mean_spacing.where(mean_spacing > 0)
     log_ret = np.log(close / close.shift(1))
     hv = log_ret.rolling(window=window).std() * np.sqrt(bars_per_year)
     return hv.fillna(default_iv)
@@ -249,10 +254,9 @@ def run_options_backtest(
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
 
-    # Compute implied volatility (approximated by historical volatility) on the
-    # cadence this run is annualised on, so legs are priced and graded alike.
-    # Each code resolves a None from its own span: a cross-market basket has no
-    # single factor, which is why the runner passes None at all.
+    # Each cross-market underlying estimates its cadence using only timestamps
+    # known at each bar. Reporting metrics may inspect the whole finished run;
+    # the volatility used to price historical trades may not.
     iv_map: Dict[str, pd.Series] = {}
     for code, df in data_map.items():
         iv_map[code] = historical_volatility(
