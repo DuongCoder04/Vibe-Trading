@@ -776,6 +776,12 @@ def _calc_options_metrics(
     max_dd: float | None = None
     if path_is_finite:
         peak = equity_vals.cummax()
+        # The account holds initial_cash before the first recorded bar, so
+        # that cash is the real high-water mark; without the seed a first-bar
+        # loss (commission alone causes one) never shows up in the drawdown.
+        # Same convention as backtest.metrics.calc_metrics.
+        if valid_initial_cash:
+            peak = peak.clip(lower=float(initial_cash))
         if bool((peak > 0).all()):
             dd = (equity_vals - peak) / peak
             max_dd = float(dd.min())
