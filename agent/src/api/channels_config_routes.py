@@ -176,9 +176,9 @@ def _drop_echoed_url_rewrites(
     writes every non-secret field back verbatim on save. Applying that echo
     would replace the stored URL with the stripped form it was derived from,
     destroying the embedded credential. An incoming value equal to the stripped
-    form of the stored one can only be the value this API handed out, so the
-    stored value is kept. Secret handling already works this way (a blank secret
-    keeps the stored value); ``clear_<key>`` remains the way to remove the
+    form of the stored one is treated as the echo of the value this API handed
+    out, so the stored value is kept. A deliberate retype of that stripped form
+    is therefore kept as well; ``clear_<key>`` remains the way to remove the
     setting, and any *different* URL, including a new credential, is applied.
     """
     kept: dict[str, Any] = {}

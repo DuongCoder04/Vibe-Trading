@@ -603,6 +603,57 @@ def test_changed_url_and_clear_flag_still_beat_the_echo_guard(
     assert "proxy" not in on_disk
 
 
+def test_enable_probe_uses_the_stored_url_not_the_echoed_stripped_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The enable transition must probe the URL on disk, credential included.
+
+    The form echoes the stripped GET value back, so without the echo guard the
+    ephemeral adapter would be built from the credential-less URL and the probe
+    would validate a different target than the one being enabled.
+    """
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    probed: list[str] = []
+
+    async def _record_probe(self: Any) -> dict[str, Any]:
+        probed.append(self.config.proxy)
+        return {"ok": True, "code": "ok", "detail": ""}
+
+    discord_cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(discord_cls, "supports_connection_test", True)
+    monkeypatch.setattr(discord_cls, "test_connection", _record_probe)
+
+    entry = client.get("/channels/config").json()["channels"]["discord"]
+    assert entry["values"]["proxy"] == "http://proxy.local:8080"
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+    patch["enabled"] = True
+
+    response = client.put("/channels/config/discord", json={"config": patch})
+    assert response.status_code == 200, response.text
+
+    assert probed == [PROXY]
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == PROXY
+    assert "proxy-secret" not in response.text
+
+
 def test_put_feishu_enable_with_bad_credentials_is_blocked_before_write(
     tmp_path: Path, monkeypatch
 ) -> None:
